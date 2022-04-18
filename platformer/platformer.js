@@ -88,25 +88,31 @@ class Vec {
 }
 
 const playerSpeed = 7,
+  playerAccel = 1,
   gravity = 30,
   jumpSpeed = 17;
 
 class Player {
-  constructor(pos, speed) {
+  constructor(pos, vel) {
     this.pos = pos;
-    this.speed = speed;
+    this.vel = vel;
+    this.acc = new Vec(0, 0);
   }
 
   update(time, state, keys) {
     let xSpeed = 0;
-    if (keys.ArrowLeft || keys.a) xSpeed -= playerSpeed;
-    if (keys.ArrowRight || keys.d) xSpeed += playerSpeed;
+    if (keys.ArrowLeft || keys.a) {
+      xSpeed -= playerSpeed;
+    }
+    if (keys.ArrowRight || keys.d) {
+      xSpeed += playerSpeed;
+    }
 
     let pos = this.pos;
     let movedX = pos.plus(new Vec(xSpeed * time, 0));
     if (!state.level.touches(movedX, this.size, "wall")) pos = movedX;
 
-    let ySpeed = this.speed.y + time * gravity;
+    let ySpeed = this.vel.y + time * gravity;
     let movedY = pos.plus(new Vec(0, ySpeed * time));
     if (!state.level.touches(movedY, this.size, "wall")) {
       pos = movedY;
@@ -217,6 +223,44 @@ class Coin {
   }
 }
 
+class Monster {
+  constructor(pos, speed) {
+    this.pos = pos;
+    this.speed = speed;
+  }
+
+  update(time, state) {
+    let newPos = this.pos.plus(this.speed.times(time));
+    if (!state.level.touches(newPos, this.size, "wall")) {
+      return new Monster(newPos, this.speed);
+    } else {
+      return new Monster(this.pos, this.speed.times(-1));
+    }
+  }
+
+  collide(state) {
+    let player = state.player;
+    if (player.pos.y < this.pos.y) {
+      let filtered = state.actors.filter((a) => a != this);
+      return new State(state.level, filtered, "playing");
+    }
+
+    return state;
+  }
+
+  get type() {
+    return "monster";
+  }
+
+  get size() {
+    return new Vec(1.2, 2);
+  }
+
+  static create(pos) {
+    return new Monster(pos.plus(new Vec(0, -1)), new Vec(2, 0));
+  }
+}
+
 function overlap(actor1, actor2) {
   return (
     actor1.pos.x + actor1.size.x > actor2.pos.x &&
@@ -235,6 +279,7 @@ const levelChars = {
   "=": Lava,
   "|": Lava,
   v: Lava,
+  M: Monster,
 };
 
 // Handling input
@@ -248,17 +293,14 @@ function trackKeys(keys) {
   }
   window.addEventListener("keydown", track);
   window.addEventListener("keyup", track);
+
+  down.unregister = () => {
+    window.removeEventListener("keydown", track);
+    window.removeEventListener("keyup", track);
+  };
+
   return down;
 }
-
-const arrowKeys = trackKeys([
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowUp",
-  "a",
-  "d",
-  "w",
-]);
 
 // Running the game
 function runAnimation(frameFunc) {
@@ -278,9 +320,36 @@ function runLevel(level, Display) {
   let display = new Display(document.body, level);
   let state = State.start(level);
   let ending = 1;
+  let running = "yes";
+
   return new Promise((resolve) => {
-    runAnimation((time) => {
-      state = state.update(time, arrowKeys);
+    function escHandler(event) {
+      if (event.key != "Escape") return;
+      event.preventDefault();
+      if (running == "no") {
+        console.log("Unpausing game");
+        running = "yes";
+        runAnimation(frame);
+      } else if (running == "yes") {
+        console.log("Pausing game");
+        running = "pausing";
+      } else {
+        running = "yes";
+      }
+    }
+
+    window.addEventListener("keyup", escHandler);
+
+    let keys = trackKeys(["ArrowLeft", "ArrowRight", "ArrowUp", "a", "d", "w"]);
+
+    function frame(time) {
+      if (running == "pausing") {
+        console.log("Game paused");
+        running = "no";
+        return false;
+      }
+
+      state = state.update(time, keys);
       display.syncState(state);
       if (state.status == "playing") {
         return true;
@@ -289,22 +358,35 @@ function runLevel(level, Display) {
         return true;
       } else {
         display.clear();
+        window.removeEventListener("keyup", escHandler);
+        keys.unregister();
         resolve(state.status);
         return false;
       }
-    });
+    }
+
+    runAnimation(frame);
   });
 }
 
 async function runGame(plans, Display) {
+  let lives = 3;
   for (let level = 0; level < plans.length; ) {
+    console.log(`Lives: ${lives}`);
     let status = await runLevel(new Level(plans[level]), Display);
+    if (status == "lost") {
+      lives--;
+      if (lives == 0) {
+        console.log("You lost, restarting the game...");
+        level = 0;
+        lives = 3;
+      }
+    }
     if (status == "won") level++;
   }
   console.log("You've won!");
 }
 
-// Levels
 let simpleLevelPlan = `
 ......................
 ..#................#..
@@ -315,3 +397,17 @@ let simpleLevelPlan = `
 ......#++++++++++++#..
 ......##############..
 ......................`;
+
+let monsterLevel = `
+..................................
+.################################.
+.#..............................#.
+.#..............................#.
+.#..............................#.
+.#...........................o..#.
+.#..@...........................#.
+.##########..............########.
+..........#..o..o..o..o..#........
+..........#...........M..#........
+..........################........
+..................................`;
