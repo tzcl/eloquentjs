@@ -65,6 +65,7 @@ class View {
     this.nextBtn = document.getElementById("next");
     this.simulateBtn = document.getElementById("simulate");
     this.clearBtn = document.getElementById("clear");
+    this.randomBtn = document.getElementById("random");
 
     this.initCheckboxes();
   }
@@ -92,6 +93,11 @@ class View {
     return this.checkboxes.map((checkbox) => checkbox.checked);
   }
 
+  displayRunning(running) {
+    if (running) this.simulateBtn.textContent = "Stop";
+    else this.simulateBtn.textContent = "Start";
+  }
+
   bindNextGeneration(handler) {
     this.nextBtn.addEventListener("click", (event) => {
       handler(this.getCells());
@@ -100,7 +106,7 @@ class View {
 
   bindSimulation(handler) {
     this.simulateBtn.addEventListener("click", (event) => {
-      handler(this.getCells());
+      handler();
     });
   }
 
@@ -109,6 +115,12 @@ class View {
       for (let checkbox of this.checkboxes) {
         checkbox.checked = false;
       }
+    });
+  }
+
+  bindRandom(handler) {
+    this.randomBtn.addEventListener("click", (event) => {
+      handler();
     });
   }
 }
@@ -125,13 +137,40 @@ class Controller {
     this.view.bindNextGeneration(this.handleNextGeneration);
     this.view.bindSimulation(this.handleSimulation);
     this.view.bindClear();
+    this.view.bindRandom(this.handleRandom);
   }
 
   handleNextGeneration = (cells) => {
     this.view.displayCells(this.model.nextGeneration(cells));
   };
 
-  handleSimulation = (cells) => {};
+  handleSimulation = () => {
+    const finished = () => {
+      clearInterval(this.interval);
+      this.running = false;
+      this.view.displayRunning(this.running);
+    };
+
+    const loop = () => {
+      let state = this.view.getCells();
+      if (state.toString() == this.model.nextGeneration(state).toString())
+        finished();
+      else
+        this.view.displayCells(this.model.nextGeneration(this.view.getCells()));
+    };
+
+    if (!this.running) {
+      this.interval = setInterval(loop, 500);
+      this.running = true;
+      this.view.displayRunning(this.running);
+    } else {
+      finished();
+    }
+  };
+
+  handleRandom = () => {
+    this.view.displayCells(this.model.initCells());
+  };
 }
 
 // Application
