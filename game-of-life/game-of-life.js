@@ -1,151 +1,140 @@
 // Model
-function initialState(width, height) {
-  // 2D array is easier to reason about
-  // 1D array may be faster (due to data locality)
-  // but the benefit is negligible here
+// Manages the data and logic of the application
+class Model {
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
+  }
 
-  // This one-liner creates a 2D array of size width x height
-  let cells = Array.from(Array(height), () => Array(width));
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      cells[row][col] = Math.random() < 0.1;
+  initCells() {
+    const cells = [];
+    for (let i = 0; i < this.width * this.height; i++) {
+      cells[i] = Math.random() < 0.1;
+    }
+
+    return cells;
+  }
+
+  index(row, col) {
+    return row * this.width + col;
+  }
+
+  pos(index) {
+    let row = Math.trunc(index / this.width);
+    let col = index % this.width;
+    return [row, col];
+  }
+
+  nextGeneration(cells) {
+    const neighbours = (row, col) => {
+      let n = 0;
+      for (let y = -1; y <= 1; y++) {
+        if (row + y < 0 || row + y >= this.height) continue;
+        for (let x = -1; x <= 1; x++) {
+          if (x == 0 && y == 0) continue;
+          if (col + x < 0 || col + x >= this.width) continue;
+          if (cells[this.index(row + y, col + x)]) n++;
+        }
+      }
+
+      return n;
+    };
+
+    return cells.map((c, i) => {
+      let n = neighbours(...this.pos(i));
+      return n == 3 || (n == 2 && c);
+    });
+  }
+
+  clear() {
+    for (let cell of cells) {
+      cell = false;
     }
   }
-  cells.height = height;
-  cells.width = width;
-  return cells;
-}
-
-function neighbours(row, col, state) {
-  let neighbours = 0; // between 3 and 8
-  for (let y = -1; y <= 1; y++) {
-    if (row + y < 0 || row + y >= state.height) continue;
-    for (let x = -1; x <= 1; x++) {
-      if (y == 0 && x == 0) continue;
-      if (col + x < 0 || col + x >= state.width) continue;
-      neighbours += state[row + y][col + x]; // cast bool to int
-    }
-  }
-  return neighbours;
-}
-
-function nextState(state) {
-  // Want to write an efficient algorithm
-  // Naive: for each cell, apply rules to neighbours
-  for (let row = 0; row < state.height; row++) {
-    for (let col = 0; col < state.width; col++) {
-      let n = neighbours(row, col, state);
-      state[row][col] = n == 3 || (n == 2 && state[row][col]);
-    }
-  }
-  return state;
 }
 
 // View
-const grid = document.getElementById("grid");
+// Handles the presentation of the data
+// Should be the only component to interact with the DOM
+class View {
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
 
-function createCheckboxes(width, height) {
-  let checkboxes = [];
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      grid.appendChild(checkbox);
-      checkboxes.push(checkbox);
-    }
+    this.grid = document.getElementById("grid");
+    this.nextBtn = document.getElementById("next");
+    this.simulateBtn = document.getElementById("simulate");
+    this.clearBtn = document.getElementById("clear");
 
-    grid.appendChild(document.createElement("br"));
+    this.initCheckboxes();
   }
-  checkboxes.width = width;
-  checkboxes.height = height;
 
-  return checkboxes;
+  initCheckboxes() {
+    this.checkboxes = [];
+    for (let row = 0; row < this.height; row++) {
+      for (let col = 0; col < this.width; col++) {
+        let checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        this.grid.appendChild(checkbox);
+        this.checkboxes.push(checkbox);
+      }
+      this.grid.appendChild(document.createElement("br"));
+    }
+  }
+
+  displayCells(cells) {
+    for (let i = 0; i < cells.length; i++) {
+      this.checkboxes[i].checked = cells[i];
+    }
+  }
+
+  getCells() {
+    return this.checkboxes.map((checkbox) => checkbox.checked);
+  }
+
+  bindNextGeneration(handler) {
+    this.nextBtn.addEventListener("click", (event) => {
+      handler(this.getCells());
+    });
+  }
+
+  bindSimulation(handler) {
+    this.simulateBtn.addEventListener("click", (event) => {
+      handler(this.getCells());
+    });
+  }
+
+  bindClear() {
+    this.clearBtn.addEventListener("click", (event) => {
+      for (let checkbox of this.checkboxes) {
+        checkbox.checked = false;
+      }
+    });
+  }
 }
 
 // Controller
+// Manages user input and passes it to the model
+class Controller {
+  constructor(width, height) {
+    this.model = new Model(width, height);
+    this.view = new View(width, height);
+
+    this.view.displayCells(this.model.initCells());
+
+    this.view.bindNextGeneration(this.handleNextGeneration);
+    this.view.bindSimulation(this.handleSimulation);
+    this.view.bindClear();
+  }
+
+  handleNextGeneration = (cells) => {
+    this.view.displayCells(this.model.nextGeneration(cells));
+  };
+
+  handleSimulation = (cells) => {};
+}
+
+// Application
 const WIDTH = 30,
   HEIGHT = 15;
-
-const init_state = initialState(WIDTH, HEIGHT);
-const checkboxes = createCheckboxes(WIDTH, HEIGHT);
-
-applyState(init_state, checkboxes);
-
-function getState(checkboxes) {
-  let cells = Array.from(Array(checkboxes.height), () =>
-    Array(checkboxes.width)
-  );
-
-  cells.width = checkboxes.width;
-  cells.height = checkboxes.height;
-
-  for (let row = 0; row < checkboxes.height; row++) {
-    for (let col = 0; col < checkboxes.width; col++) {
-      cells[row][col] = checkboxes[row * checkboxes.width + col].checked;
-    }
-  }
-
-  return cells;
-}
-
-function applyState(state, checkboxes) {
-  for (let row = 0; row < checkboxes.height; row++) {
-    for (let col = 0; col < checkboxes.width; col++) {
-      let checkbox = checkboxes[row * checkboxes.width + col];
-      checkbox.checked = state[row][col];
-    }
-  }
-}
-
-function clearCheckboxes(checkboxes) {
-  for (let row = 0; row < checkboxes.height; row++) {
-    for (let col = 0; col < checkboxes.width; col++) {
-      checkboxes[row * checkboxes.width + col].checked = false;
-    }
-  }
-}
-
-function handleNext(event) {
-  let state = getState(checkboxes);
-  state = nextState(state);
-  applyState(state, checkboxes);
-}
-
-function handleAuto(event) {
-  let state = getState(checkboxes);
-  let prev_state;
-
-  let running = null;
-  if (running) {
-    clearInterval(running);
-    running = null;
-  } else {
-    running = setInterval(() => {
-      state = getState(checkboxes);
-      state = nextState(state);
-      applyState(state, checkboxes);
-    }, 500);
-  }
-}
-
-function handleClear(event) {
-  clearCheckboxes(checkboxes);
-}
-
-const next = document.getElementById("next");
-const auto = document.getElementById("auto");
-const clear = document.getElementById("clear");
-
-function registerHandlers() {
-  next.addEventListener("click", handleNext);
-  auto.addEventListener("click", handleAuto);
-  clear.addEventListener("click", handleClear);
-
-  return () => {
-    next.removeEventListener("click", handleNext);
-    auto.removeEventListener("click", handleAuto);
-    clear.removeEventListener("click", handleClear);
-  };
-}
-
-let deregisterHandlers = registerHandlers();
+const app = new Controller(WIDTH, HEIGHT);
