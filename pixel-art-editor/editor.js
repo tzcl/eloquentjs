@@ -291,7 +291,7 @@ class ToolSelect {
       ),
     });
 
-    this.dom = elt("label", null, "🖌 Tool: ", this.select);
+    this.dom = elt("label", null, elt("span", {}, "🖌"), " Tool: ", this.select);
   }
 
   update(state) {
@@ -307,7 +307,13 @@ class ColourSelect {
       onchange: () => dispatch({ colour: this.input.value }),
     });
 
-    this.dom = elt("label", null, "🎨 Colour: ", this.input);
+    this.dom = elt(
+      "label",
+      null,
+      elt("span", {}, "🎨"),
+      " Colour: ",
+      this.input
+    );
   }
 
   update(state) {
@@ -323,7 +329,8 @@ class SaveButton {
       {
         onclick: () => this.save(),
       },
-      "💾 Save"
+      elt("span", {}, "💾"),
+      " Save"
     );
   }
 
@@ -353,7 +360,8 @@ class LoadButton {
       {
         onclick: () => startLoad(dispatch),
       },
-      "📂 Load"
+      elt("span", {}, "📂"),
+      " Load"
     );
   }
 
@@ -414,7 +422,8 @@ class UndoButton {
         onclick: () => dispatch({ undo: true }),
         disabled: state.prev.length == 0,
       },
-      "↩ Undo"
+      elt("span", {}, "↩"),
+      " Undo"
     );
   }
 

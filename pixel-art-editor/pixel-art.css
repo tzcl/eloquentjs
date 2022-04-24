@@ -1,0 +1,5 @@
+/* Improve emoji compatibility */
+span {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+    "Noto Emoji";
+}
