@@ -26,6 +26,27 @@ function updateState(state, action) {
   return { ...state, ...action };
 }
 
+function historyUpdateState(state, action) {
+  if (action.undo == true) {
+    if (state.prev.length == 0) return state;
+    return {
+      ...state,
+      picture: state.prev[0],
+      prev: state.prev.slice(1),
+      timestamp: 0,
+    };
+  } else if (action.picture && state.timestamp < Date.now() - 1000) {
+    return {
+      ...state,
+      ...action,
+      prev: [state.picture, ...state.prev],
+      timestamp: Date.now(),
+    };
+  } else {
+    return { ...state, ...action };
+  }
+}
+
 function elt(type, props, ...children) {
   const dom = document.createElement(type);
   // Assign properties (instead of attributes)
@@ -385,22 +406,59 @@ function pictureFromImage(image) {
   return new Picture(width, height, pixels);
 }
 
+class UndoButton {
+  constructor(state, { dispatch }) {
+    this.dom = elt(
+      "button",
+      {
+        onclick: () => dispatch({ undo: true }),
+        disabled: state.prev.length == 0,
+      },
+      "↩ Undo"
+    );
+  }
+
+  update(state) {
+    this.dom.disabled = state.prev.length == 0;
+  }
+}
+
 // TODO: reorganise code, clean up
 
 // Start application
-let state = {
+const startState = {
   tool: "draw",
   colour: "#000000",
   picture: Picture.empty(60, 30, "#f0f0f0"),
+  prev: [],
+  timestamp: 0,
 };
 
-let app = new PixelEditor(state, {
-  tools: { draw, fill, rectangle, pick },
-  controls: [ToolSelect, ColourSelect, SaveButton, LoadButton],
-  dispatch(action) {
-    state = updateState(state, action);
-    app.update(state);
-  },
-});
+const baseTools = { draw, fill, rectangle, pick };
 
-document.getElementById("root").appendChild(app.dom);
+const baseControls = [
+  ToolSelect,
+  ColourSelect,
+  SaveButton,
+  LoadButton,
+  UndoButton,
+];
+
+function startPixelEditor({
+  state = startState,
+  tools = baseTools,
+  controls = baseControls,
+}) {
+  let app = new PixelEditor(state, {
+    tools,
+    controls,
+    dispatch(action) {
+      state = historyUpdateState(state, action);
+      app.update(state);
+    },
+  });
+
+  return app.dom;
+}
+
+document.getElementById("root").appendChild(startPixelEditor({}));
