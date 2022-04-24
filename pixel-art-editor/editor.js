@@ -27,18 +27,93 @@ function updateState(state, action) {
 }
 
 function elt(type, props, ...children) {
-  const node = document.createElement(type);
+  const dom = document.createElement(type);
   // Assign properties (instead of attributes)
   // Lets us register event handlers, but can't set arbitrary attributes
-  if (props) Object.assign(node, props);
+  if (props) Object.assign(dom, props);
 
   for (let child of children) {
-    if (typeof child != "string") node.appendChild(child);
-    else node.appendChild(document.createTextNode(child));
+    if (typeof child != "string") dom.appendChild(child);
+    else dom.appendChild(document.createTextNode(child));
   }
 
-  return node;
+  return dom;
 }
+
+function draw(pos, state, dispatch) {
+  function drawPixel({ x, y }, state) {
+    let drawn = { x, y, colour: state.colour };
+    dispatch({ picture: state.picture.draw([drawn]) });
+  }
+
+  // Immediately draw a pixel
+  drawPixel(pos, state);
+
+  // But also return it so that it can be called again when the user drags or
+  // swipes over the picture
+  return drawPixel;
+}
+
+function rectangle(start, state, dispatch) {
+  function drawRectangle(pos) {
+    let xStart = Math.min(start.x, pos.x);
+    let yStart = Math.min(start.y, pos.y);
+    let xEnd = Math.max(start.x, pos.x);
+    let yEnd = Math.max(start.y, pos.y);
+
+    // Draw the rectangle on the original picture
+    // This way the intermediate rectangles aren't saved
+    let drawn = [];
+    for (let y = yStart; y <= yEnd; y++) {
+      for (let x = xStart; x <= xEnd; x++) {
+        drawn.push({ x, y, colour: state.colour });
+      }
+    }
+
+    dispatch({ picture: state.picture.draw(drawn) });
+  }
+
+  drawRectangle(start);
+  return drawRectangle;
+}
+
+const around = [
+  { dx: -1, dy: 0 },
+  { dx: 1, dy: 0 },
+  { dx: 0, dy: -1 },
+  { dx: 0, dy: 1 },
+];
+
+function fill({ x, y }, state, dispatch) {
+  let targetColour = state.picture.pixel(x, y);
+  let drawn = [{ x, y, colour: state.colour }];
+  for (let done = 0; done < drawn.length; done++) {
+    // For each neighbour
+    for (let { dx, dy } of around) {
+      let x = drawn[done].x + dx,
+        y = drawn[done].y + dy;
+      if (
+        x < 0 ||
+        x >= state.picture.width ||
+        y < 0 ||
+        y >= state.picture.height || // out of bounds
+        state.picture.pixel(x, y) != targetColour || // different colour
+        drawn.some((p) => p.x == x && p.y == y) // already visited
+      )
+        continue;
+
+      drawn.push({ x, y, colour: state.colour });
+    }
+  }
+
+  dispatch({ picture: state.picture.draw(drawn) });
+}
+
+function pick(pos, state, dispatch) {
+  dispatch({ colour: state.picture.pixel(pos.x, pos.y) });
+}
+
+// TODO: reorganise this code, these global functions should belong in different sections
 
 function drawPicture(picture, canvas, scale) {
   canvas.width = picture.width * scale;
@@ -54,7 +129,7 @@ function drawPicture(picture, canvas, scale) {
 }
 
 function pointerPosition(pos, dom) {
-  const rect = node.getBoundingClientRect();
+  const rect = dom.getBoundingClientRect();
 
   return {
     x: Math.floor((pos.clientX - rect.left) / scale),
@@ -163,7 +238,7 @@ class PixelEditor {
       if (onMove) return (pos) => onMove(pos, this.state);
     });
 
-    this.controls = controls.map((control) => new Control(state, config));
+    this.controls = controls.map((control) => new control(state, config));
 
     this.dom = elt(
       "div",
@@ -185,7 +260,7 @@ class ToolSelect {
   constructor(state, { tools, dispatch }) {
     this.select = elt("select", {
       onchange: () => dispatch({ tool: this.select.value }),
-      ...Object.key(tools).map((name) =>
+      ...Object.keys(tools).map((name) =>
         elt(
           "option",
           {
@@ -196,9 +271,44 @@ class ToolSelect {
       ),
     });
 
-    // can't see the paintbrush emoji
-    this.dom = elt("label", null, "🖌 Tool: ".this.select);
+    this.dom = elt("label", null, "🖌 Tool: ", this.select);
   }
 
-  update(state) {}
+  update(state) {
+    this.select.value = state.tool;
+  }
 }
+
+class ColourSelect {
+  constructor(state, { dispatch }) {
+    this.input = elt("input", {
+      type: "colour",
+      value: state.colour,
+      onchange: () => dispatch({ colour: this.input.value }),
+    });
+
+    this.dom = elt("label", null, "🎨 Colour: ", this.input);
+  }
+
+  update(state) {
+    this.input.value = state.colour;
+  }
+}
+
+// Start application
+let state = {
+  tool: "draw",
+  colour: "#000000",
+  picture: Picture.empty(60, 30, "#f0f0f0"),
+};
+
+let app = new PixelEditor(state, {
+  tools: { draw, fill, rectangle, pick },
+  controls: [ToolSelect, ColourSelect],
+  dispatch(action) {
+    state = updateState(state, action);
+    app.update(state);
+  },
+});
+
+document.getElementById("root").appendChild(app.dom);
