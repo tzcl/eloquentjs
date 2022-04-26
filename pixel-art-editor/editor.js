@@ -258,11 +258,24 @@ class PixelEditor {
       if (onMove) return (pos) => onMove(pos, this.state);
     });
 
-    this.controls = controls.map((control) => new control(state, config));
+    this.controls = controls.map((Control) => new Control(state, config));
+
+    const keyDown = (event) => {
+      if (event.key == "z" && (event.ctrlKey || event.metaKey)) {
+        dispatch({ undo: true });
+      } else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        for (let tool in tools) {
+          if (event.key == tool[0]) {
+            dispatch({ tool });
+            return;
+          }
+        }
+      }
+    };
 
     this.dom = elt(
       "div",
-      {},
+      { tabIndex: 0, onkeydown: (event) => keyDown(event) },
       this.canvas.dom,
       elt("br"),
       ...this.controls.reduce((a, c) => a.concat(" ", c.dom), [])
