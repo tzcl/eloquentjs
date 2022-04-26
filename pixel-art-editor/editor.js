@@ -130,6 +130,36 @@ function fill({ x, y }, state, dispatch) {
   dispatch({ picture: state.picture.draw(drawn) });
 }
 
+function circle(start, state, dispatch) {
+  const dist = (x, y) => {
+    let dx = x - start.x;
+    let dy = y - start.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  function drawCircle(pos) {
+    let radius = Math.ceil(dist(pos.x, pos.y));
+
+    let xStart = Math.max(0, start.x - radius);
+    let yStart = Math.max(0, start.y - radius);
+    let xEnd = Math.min(start.x + radius, state.picture.width);
+    let yEnd = Math.min(start.y + radius, state.picture.height);
+
+    let drawn = [];
+    for (let y = yStart; y <= yEnd; y++) {
+      for (let x = xStart; x <= xEnd; x++) {
+        let d = dist(x, y);
+        if (d < radius) drawn.push({ x, y, colour: state.colour });
+      }
+    }
+
+    dispatch({ picture: state.picture.draw(drawn) });
+  }
+
+  drawCircle(start);
+  return drawCircle;
+}
+
 function pick(pos, state, dispatch) {
   dispatch({ colour: state.picture.pixel(pos.x, pos.y) });
 }
@@ -473,7 +503,7 @@ const startState = {
   timestamp: 0,
 };
 
-const baseTools = { draw, fill, rectangle, pick };
+const baseTools = { draw, fill, rectangle, circle, pick };
 
 const baseControls = [
   ToolSelect,
