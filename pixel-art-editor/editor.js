@@ -134,17 +134,31 @@ function pick(pos, state, dispatch) {
   dispatch({ colour: state.picture.pixel(pos.x, pos.y) });
 }
 
-// TODO: reorganise this code, these global functions should belong in different sections
-
 function drawPicture(picture, canvas, scale) {
+  // Changing the size of a <canvas> element clears it and makes it transparent
   canvas.width = picture.width * scale;
   canvas.height = picture.height * scale;
   let cx = canvas.getContext("2d");
 
+  // Redrawing the whole canvas is expensive
   for (let y = 0; y < picture.height; y++) {
     for (let x = 0; x < picture.width; x++) {
       cx.fillStyle = picture.pixel(x, y);
       cx.fillRect(x * scale, y * scale, scale, scale);
+    }
+  }
+}
+
+// Skip unnecessary redraws
+function patchPicture(prev, curr, canvas, scale) {
+  let cx = canvas.getContext("2d");
+
+  for (let y = 0; y < prev.height; y++) {
+    for (let x = 0; x < prev.width; x++) {
+      if (prev.pixel(x, y) != curr.pixel(x, y)) {
+        cx.fillStyle = curr.pixel(x, y);
+        cx.fillRect(x * scale, y * scale, scale, scale);
+      }
     }
   }
 }
@@ -195,9 +209,14 @@ class PictureCanvas {
   }
 
   update(picture) {
+    if (!this.picture) {
+      this.picture = picture;
+      drawPicture(this.picture, this.dom, scale);
+    }
+
     if (this.picture == picture) return;
+    patchPicture(this.picture, picture, this.dom, scale);
     this.picture = picture;
-    drawPicture(this.picture, this.dom, scale);
   }
 
   mouse(downEvent, onDown) {
@@ -444,8 +463,6 @@ class UndoButton {
     this.dom.disabled = state.prev.length == 0;
   }
 }
-
-// TODO: reorganise code, clean up
 
 // Start application
 const startState = {
