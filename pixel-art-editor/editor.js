@@ -315,9 +315,9 @@ class ToolSelect {
 class ColourSelect {
   constructor(state, { dispatch }) {
     this.input = elt("input", {
-      type: "colour",
+      type: "color",
       value: state.colour,
-      onchange: () => dispatch({ colour: this.input.value }),
+      oninput: () => dispatch({ colour: this.input.value }),
     });
 
     this.dom = elt(
