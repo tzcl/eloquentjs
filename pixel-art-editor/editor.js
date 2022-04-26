@@ -61,18 +61,56 @@ function elt(type, props, ...children) {
   return dom;
 }
 
-function draw(pos, state, dispatch) {
-  function drawPixel({ x, y }, state) {
-    let drawn = { x, y, colour: state.colour };
-    dispatch({ picture: state.picture.draw([drawn]) });
+// Bresenham's algorithm
+// Basic idea: increment y when the error gets too big
+// This is generalised to work for all octants
+function drawLine(start, pos, colour) {
+  let dx = Math.abs(pos.x - start.x);
+  let sx = start.x < pos.x ? 1 : -1;
+
+  // Note the negative
+  // In graphics, y++ means moving down
+  let dy = -Math.abs(pos.y - start.y);
+  let sy = start.y < pos.y ? 1 : -1;
+
+  let err = dx + dy;
+
+  let drawn = [];
+  for (let x = start.x, y = start.y; ; ) {
+    drawn.push({ x, y, colour });
+    if (x == pos.x && y == pos.y) break;
+    let err2 = 2 * err; // avoid dividing
+    if (err2 >= dy) {
+      if (x == pos.x) break;
+      err += dy;
+      x += sx;
+    }
+    if (err2 <= dx) {
+      if (y == pos.y) break;
+      err += dx;
+      y += sy;
+    }
   }
 
-  // Immediately draw a pixel
-  drawPixel(pos, state);
+  return drawn;
+}
+
+function draw(start, state, dispatch) {
+  // Draw segments rather than pixels
+  // The mousemove/touchmove events don't fire quickly enough to hit every pixel
+  // when you move the mouse quickly
+  function drawSegment(pos, state) {
+    let drawn = drawLine(start, pos, state.colour);
+    start = pos;
+    dispatch({ picture: state.picture.draw(drawn) });
+  }
+
+  // Immediately draw a segment
+  drawSegment(start, state);
 
   // But also return it so that it can be called again when the user drags or
   // swipes over the picture
-  return drawPixel;
+  return drawSegment;
 }
 
 function rectangle(start, state, dispatch) {
@@ -158,6 +196,13 @@ function circle(start, state, dispatch) {
 
   drawCircle(start);
   return drawCircle;
+}
+
+function line(start, state, dispatch) {
+  return (end) => {
+    let drawn = drawLine(pos, end, state.colour);
+    dispatch({ picture: state.picture.draw(drawn) });
+  };
 }
 
 function pick(pos, state, dispatch) {
@@ -503,7 +548,7 @@ const startState = {
   timestamp: 0,
 };
 
-const baseTools = { draw, fill, rectangle, circle, pick };
+const baseTools = { draw, line, rectangle, circle, fill, pick };
 
 const baseControls = [
   ToolSelect,
