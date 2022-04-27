@@ -23,17 +23,33 @@
 const scale = 10;
 
 function updateState(state, action) {
-  if (action.history == "undo") {
-    if (state.prev.length == 0) return state;
+  if (action.revert == "undo") {
+    if (state.history.length == 1) return state;
     return {
       ...state,
-      picture: state.prev[0],
-      prev: state.prev.slice(1),
+      picture: state.history[state.marker + 1],
+      marker: state.marker + 1,
+    };
+  } else if (action.revert == "redo") {
+    if (state.history.length == 1) return state;
+    return {
+      ...state,
+      picture: state.history[state.marker - 1],
+      marker: state.marker - 1,
     };
   } else if (action.commit == true) {
+    let history = [state.picture, ...state.history];
+    let marker = state.marker;
+
+    if (state.marker > 0) {
+      history = [state.picture, ...state.history.slice(state.marker)];
+      marker = 0;
+    }
+
     return {
       ...state,
-      prev: [state.picture, ...state.prev],
+      history,
+      marker,
     };
   } else {
     return { ...state, ...action };
@@ -159,6 +175,7 @@ function fill({ x, y }, state, dispatch) {
   }
 
   dispatch({ picture: state.picture.draw(drawn) });
+  dispatch({ commit: true });
 }
 
 function circle(start, state, dispatch) {
@@ -193,7 +210,7 @@ function circle(start, state, dispatch) {
 
 function line(start, state, dispatch) {
   return (end) => {
-    let drawn = drawLine(pos, end, state.colour);
+    let drawn = drawLine(start, end, state.colour);
     dispatch({ picture: state.picture.draw(drawn) });
   };
 }
@@ -267,10 +284,10 @@ class Picture {
 }
 
 class PictureCanvas {
-  constructor(picture, pointerDown) {
+  constructor(picture, pointerDown, pointerUp) {
     this.dom = elt("canvas", {
-      onmousedown: (event) => this.mouse(event, pointerDown),
-      ontouchstart: (event) => this.touch(event, pointerDown),
+      onmousedown: (event) => this.mouse(event, pointerDown, pointerUp),
+      ontouchstart: (event) => this.touch(event, pointerDown, pointerUp),
     });
 
     this.update(picture);
@@ -287,7 +304,7 @@ class PictureCanvas {
     this.picture = picture;
   }
 
-  mouse(downEvent, onDown) {
+  mouse(downEvent, onDown, onUp) {
     if (downEvent.button != 0) return;
 
     let pos = pointerPosition(downEvent, this.dom);
@@ -295,34 +312,38 @@ class PictureCanvas {
     if (!onMove) return;
 
     const move = (moveEvent) => {
-      if (moveEvent.buttons == 0) {
-        this.dom.removeEventListener("mousemove", move);
-      } else {
-        let newPos = pointerPosition(moveEvent, this.dom);
-        if (newPos.x == pos.x && newPos.y == pos.y) return;
-        pos = newPos;
-        onMove(newPos);
-      }
+      let newPos = pointerPosition(moveEvent, this.dom);
+      if (newPos.x == pos.x && newPos.y == pos.y) return;
+      pos = newPos;
+      onMove(newPos);
+    };
+
+    const end = () => {
+      onUp();
+      this.dom.removeEventListener("mousemove", move);
+      this.dom.removeEventListener("mouseup", end);
     };
 
     this.dom.addEventListener("mousemove", move);
+    this.dom.addEventListener("mouseup", end);
   }
 
-  touch(startEvent, onDown) {
+  touch(startEvent, onDown, onUp) {
     startEvent.preventDefault();
 
     let pos = pointerPosition(startEvent.touches[0], this.dom);
     const onMove = onDown(pos);
     if (!onMove) return;
 
-    let move = (moveEvent) => {
+    const move = (moveEvent) => {
       const newPos = pointerPosition(moveEvent.touches[0], this.dom);
       if (newPos.x == pos.x && newPos.y == pos.y) return;
       pos = newPos;
       onMove(newPos);
     };
 
-    let end = () => {
+    const end = () => {
+      onUp();
       this.dom.removeEventListener("touchmove", move);
       this.dom.removeEventListener("touchend", end);
     };
@@ -339,23 +360,26 @@ class PixelEditor {
     let { tools, controls, dispatch } = config;
     this.state = state;
 
-    this.canvas = new PictureCanvas(state.picture, (pos) => {
-      // Save the state of the canvas
-      dispatch({ commit: true });
+    this.canvas = new PictureCanvas(
+      state.picture,
+      (pos) => {
+        let tool = tools[this.state.tool];
 
-      let tool = tools[this.state.tool];
-
-      // Call the tool once
-      let onMove = tool(pos, this.state, dispatch);
-      // The tool may return a function to draw on mouse movement
-      if (onMove) return (pos) => onMove(pos, this.state);
-    });
+        // Call the tool once
+        let onMove = tool(pos, this.state, dispatch);
+        // Pass along function in case we need to redraw
+        if (onMove) return (pos) => onMove(pos, this.state);
+      },
+      () => dispatch({ commit: true })
+    );
 
     this.controls = controls.map((Control) => new Control(state, config));
 
     const keyDown = (event) => {
       if (event.key == "z" && (event.ctrlKey || event.metaKey)) {
-        dispatch({ history: "undo" });
+        dispatch({ revert: "undo" });
+      } else if (event.key == "y" && (event.ctrlKey || event.metaKey)) {
+        dispatch({ revert: "redo" });
       } else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         for (let tool in tools) {
           if (event.key == tool[0]) {
@@ -525,8 +549,8 @@ class UndoButton {
     this.dom = elt(
       "button",
       {
-        onclick: () => dispatch({ history: "undo" }),
-        disabled: state.prev.length == 0,
+        onclick: () => dispatch({ revert: "undo" }),
+        disabled: state.marker == state.history.length - 1,
       },
       elt("span", {}, "↩"),
       " Undo"
@@ -534,16 +558,37 @@ class UndoButton {
   }
 
   update(state) {
-    this.dom.disabled = state.prev.length == 0;
+    this.dom.disabled = state.marker == state.history.length - 1;
   }
 }
+
+class RedoButton {
+  constructor(state, { dispatch }) {
+    this.dom = elt(
+      "button",
+      {
+        onclick: () => dispatch({ revert: "redo" }),
+        disabled: state.marker == 0,
+      },
+      elt("span", {}, "↪"),
+      " Redo"
+    );
+  }
+
+  update(state) {
+    this.dom.disabled = state.marker == 0;
+  }
+}
+
+const defaultPicture = Picture.empty(60, 30, "#f0f0f0");
 
 // Start application
 const startState = {
   tool: "draw",
   colour: "#000000",
-  picture: Picture.empty(60, 30, "#f0f0f0"),
-  prev: [], // TODO: make fixed size
+  picture: defaultPicture,
+  history: [defaultPicture], // TODO: make fixed size
+  marker: 0,
 };
 
 const baseTools = { draw, line, rectangle, circle, fill, pick };
@@ -554,6 +599,7 @@ const baseControls = [
   SaveButton,
   LoadButton,
   UndoButton,
+  RedoButton,
 ];
 
 function startPixelEditor({
@@ -566,6 +612,7 @@ function startPixelEditor({
     controls,
     dispatch(action) {
       state = updateState(state, action);
+      console.log("Updating", action, state);
       app.update(state);
     },
   });
