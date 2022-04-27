@@ -23,24 +23,17 @@
 const scale = 10;
 
 function updateState(state, action) {
-  return { ...state, ...action };
-}
-
-function historyUpdateState(state, action) {
-  if (action.undo == true) {
+  if (action.history == "undo") {
     if (state.prev.length == 0) return state;
     return {
       ...state,
       picture: state.prev[0],
       prev: state.prev.slice(1),
-      timestamp: 0,
     };
-  } else if (action.picture && state.timestamp < Date.now() - 1000) {
+  } else if (action.commit == true) {
     return {
       ...state,
-      ...action,
       prev: [state.picture, ...state.prev],
-      timestamp: Date.now(),
     };
   } else {
     return { ...state, ...action };
@@ -347,8 +340,14 @@ class PixelEditor {
     this.state = state;
 
     this.canvas = new PictureCanvas(state.picture, (pos) => {
+      // Save the state of the canvas
+      dispatch({ commit: true });
+
       let tool = tools[this.state.tool];
+
+      // Call the tool once
       let onMove = tool(pos, this.state, dispatch);
+      // The tool may return a function to draw on mouse movement
       if (onMove) return (pos) => onMove(pos, this.state);
     });
 
@@ -356,7 +355,7 @@ class PixelEditor {
 
     const keyDown = (event) => {
       if (event.key == "z" && (event.ctrlKey || event.metaKey)) {
-        dispatch({ undo: true });
+        dispatch({ history: "undo" });
       } else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         for (let tool in tools) {
           if (event.key == tool[0]) {
@@ -526,7 +525,7 @@ class UndoButton {
     this.dom = elt(
       "button",
       {
-        onclick: () => dispatch({ undo: true }),
+        onclick: () => dispatch({ history: "undo" }),
         disabled: state.prev.length == 0,
       },
       elt("span", {}, "↩"),
@@ -544,8 +543,7 @@ const startState = {
   tool: "draw",
   colour: "#000000",
   picture: Picture.empty(60, 30, "#f0f0f0"),
-  prev: [],
-  timestamp: 0,
+  prev: [], // TODO: make fixed size
 };
 
 const baseTools = { draw, line, rectangle, circle, fill, pick };
@@ -567,7 +565,7 @@ function startPixelEditor({
     tools,
     controls,
     dispatch(action) {
-      state = historyUpdateState(state, action);
+      state = updateState(state, action);
       app.update(state);
     },
   });
