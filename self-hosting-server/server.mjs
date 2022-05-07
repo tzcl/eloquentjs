@@ -2,7 +2,7 @@ import { createServer } from "http";
 import { parse } from "url";
 import { resolve, sep } from "path";
 import { createReadStream, createWriteStream } from "fs";
-import { stat, readdir, rmdir, unlink } from "fs/promises";
+import { stat, readdir, mkdir, rmdir, unlink } from "fs/promises";
 import mime from "mime";
 
 const baseDirectory = process.cwd();
@@ -65,6 +65,22 @@ methods.PUT = async function (req) {
   let path = urlPath(req.url);
   await pipeStream(req, createWriteStream(path));
   return { status: 204 };
+};
+
+methods.MKCOL = async function (req) {
+  let path = urlPath(req.url);
+  let stats;
+  try {
+    stats = await stat(path);
+  } catch (err) {
+    if (err.code == "ENOENT") {
+      await mkdir(path);
+      return { status: 204 };
+    } else throw err;
+  }
+
+  if (stats.isDirectory()) return { status: 204 };
+  else return { status: 409, body: "Not a directory" };
 };
 
 async function notAllowed(req) {
