@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "serve": "^13.0.2"
+  },
+  "type": "module"
+}
