@@ -1,5 +1,14 @@
 // STATE
 // Dispatch on action.type
+function fetchOk(url, options) {
+  return fetch(url, options).then((res) => {
+    if (res.status < 400) return res;
+    else throw new Error(res.statusText);
+  });
+}
+
+// TODO: clean up code
+
 function handleAction(state, action) {
   if (action.type == "setUser") {
     localStorage.setItem("userName", action.user); // store the user's name between reloads
@@ -13,9 +22,9 @@ function handleAction(state, action) {
       body: JSON.stringify({ presenter: state.user, summary: action.summary }),
     }).catch(reportError);
   } else if (action.type == "deleteTalk") {
-    fetchOK(talkURL(action.talk), { method: "DELETE" }).catch(reportError);
+    fetchOk(talkURL(action.talk), { method: "DELETE" }).catch(reportError);
   } else if (action.type == "newComment") {
-    fetchOK(talkURL(action.talk) + "/comments", {
+    fetchOk(talkURL(action.talk) + "/comments", {
       method: "POST",
       header: { "Content-Type": "application/json" },
       body: JSON.stringify({ author: state.user, message: action.message }),
@@ -23,13 +32,6 @@ function handleAction(state, action) {
   }
 
   return state;
-}
-
-function fetchOK(url, options) {
-  return fetch(url, options).then((res) => {
-    if (res.status < 400) return res;
-    else throw new Error(res.statusText);
-  });
 }
 
 function talkURL(title) {
@@ -41,14 +43,12 @@ function reportError(error) {
 }
 
 // RENDERING
-function elt(name, attrs, ...children) {
+function elt(name, props, ...children) {
   let dom = document.createElement(name);
-  for (let attr of Object.keys(attrs)) {
-    dom.setAttribute(attr, attrs[attr]);
-  }
-
+  if (props) Object.assign(dom, props);
   for (let child of children) {
-    dom.appendChild(child);
+    if (typeof child != "string") dom.appendChild(child);
+    else dom.appendChild(document.createTextNode(child));
   }
 
   return dom;
@@ -172,8 +172,27 @@ class SkillShareApp {
   }
 }
 
+async function pollTalks(update) {
+  let tag = undefined;
+  for (;;) {
+    let res;
+    try {
+      res = await fetchOk("/talks", {
+        headers: tag && { "If-None-Match": tag, Prefer: "wait=90" },
+      });
+    } catch (e) {
+      console.log("Request failed: " + e);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      continue;
+    }
+    if (res.status == 304) continue;
+    tag = res.headers.get("ETag");
+    update(await res.json());
+  }
+}
+
 function runApp() {
-  let user = localStorage.getItme("userName") || "Anon";
+  let user = localStorage.getItem("userName") || "Anon";
   let state, app;
   function dispatch(action) {
     state = handleAction(state, action);
@@ -183,10 +202,12 @@ function runApp() {
   pollTalks((talks) => {
     if (!app) {
       state = { user, talks };
-      app = new SkillShareApp(state);
+      app = new SkillShareApp(state, dispatch);
       document.body.appendChild(app.dom);
     } else {
       dispatch({ type: "setTalks", talks });
     }
   }).catch(reportError);
 }
+
+runApp();
