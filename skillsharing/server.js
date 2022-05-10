@@ -1,80 +1,12 @@
 import { createServer } from "http";
-import Router from "./router.js";
+import { readFile, writeFile } from "fs/promises";
 import serve_handler from "serve-handler";
+import Router from "./router.js";
 
 const router = new Router();
 const defaultHeaders = { "Content-Type": "text/plain" };
 
-// TODO: cleanup
-
-class SkillShareServer {
-  constructor(talks) {
-    this.talks = talks;
-    this.version = 0;
-    this.waiting = [];
-
-    this.server = createServer((req, res) => {
-      let resolved = router.resolve(this, req);
-      if (resolved) {
-        resolved
-          .catch((err) => {
-            if (err.status != null) return err;
-            return { body: String(err), status: 500 };
-          })
-          .then(({ body, status = 200, headers = defaultHeaders }) => {
-            res.writeHead(status, headers);
-            res.end(body);
-          });
-      } else {
-        // serve out of the public folder
-        serve_handler(req, res, { public: "public" });
-      }
-    });
-  }
-
-  start(port) {
-    this.server.listen(port);
-  }
-
-  stop() {
-    this.server.close;
-  }
-
-  talkResponse() {
-    let talks = [];
-    for (let title of Object.keys(this.talks)) {
-      talks.push(this.talks[title]);
-    }
-
-    let res = {
-      body: JSON.stringify(talks),
-      headers: {
-        "Content-Type": "application/json",
-        ETag: `"${this.version}"`,
-        "Cache-Control": "no-store",
-      },
-    };
-    return res;
-  }
-
-  waitForChanges(time) {
-    return new Promise((resolve) => {
-      this.waiting.push(resolve);
-      setTimeout(() => {
-        if (!this.waiting.includes(resolve)) return;
-        this.waiting = this.waiting.filter((r) => r != resolve);
-        resolve({ status: 304 });
-      }, time * 1000);
-    });
-  }
-
-  updated() {
-    this.version++;
-    let res = this.talkResponse();
-    this.waiting.forEach((resolve) => resolve(res));
-    this.waiting = [];
-  }
-}
+// Set up routes
 
 router.add("GET", /^\/talks$/, async (server, req) => {
   let tag = /"(.*)"/.exec(req.headers["if-none-match"]);
@@ -174,5 +106,96 @@ router.add(
   }
 );
 
+// Server code
+
+const filePath = "data.json";
+
+async function loadTalks(file = filePath) {
+  let data;
+  try {
+    data = JSON.parse(await readFile(file, { encoding: "utf-8" }));
+  } catch (err) {
+    data = {};
+  }
+
+  // Need to do this to remove the prototype
+  // If not, we wouldn't be able to use the 'in' operator safely
+  return Object.assign(Object.create(null), data);
+}
+
+class SkillShareServer {
+  constructor(talks) {
+    this.talks = talks;
+    this.version = 0;
+    this.waiting = [];
+
+    this.server = createServer((req, res) => {
+      let resolved = router.resolve(this, req);
+      if (resolved) {
+        resolved
+          .catch((err) => {
+            if (err.status != null) return err;
+            return { body: String(err), status: 500 };
+          })
+          .then(({ body, status = 200, headers = defaultHeaders }) => {
+            res.writeHead(status, headers);
+            res.end(body);
+          });
+      } else {
+        // serve out of the public folder
+        serve_handler(req, res, { public: "public" });
+      }
+    });
+  }
+
+  start(port) {
+    this.server.listen(port);
+  }
+
+  stop() {
+    this.server.close;
+  }
+
+  talkResponse() {
+    let talks = [];
+    for (let title of Object.keys(this.talks)) {
+      talks.push(this.talks[title]);
+    }
+
+    let res = {
+      body: JSON.stringify(talks),
+      headers: {
+        "Content-Type": "application/json",
+        ETag: `"${this.version}"`,
+        "Cache-Control": "no-store",
+      },
+    };
+    return res;
+  }
+
+  waitForChanges(time) {
+    return new Promise((resolve) => {
+      this.waiting.push(resolve);
+      setTimeout(() => {
+        if (!this.waiting.includes(resolve)) return;
+        this.waiting = this.waiting.filter((r) => r != resolve);
+        resolve({ status: 304 });
+      }, time * 1000);
+    });
+  }
+
+  updated() {
+    this.version++;
+    let res = this.talkResponse();
+    this.waiting.forEach((resolve) => resolve(res));
+    this.waiting = [];
+
+    writeFile(filePath, JSON.stringify(this.talks), (err) => {
+      if (err) throw err;
+    });
+  }
+}
+
 // Start the server
-new SkillShareServer(Object.create(null)).start(8000);
+
+new SkillShareServer(await loadTalks()).start(8000);
