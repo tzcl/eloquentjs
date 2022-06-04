@@ -7,8 +7,6 @@ function fetchOk(url, options) {
   });
 }
 
-// TODO: clean up code
-
 function handleAction(state, action) {
   if (action.type == "setUser") {
     localStorage.setItem("userName", action.user); // store the user's name between reloads
@@ -67,10 +65,6 @@ function renderUserField(name, dispatch) {
       },
     })
   );
-}
-
-function renderTalk(talk, comments, dispatch) {
-  return;
 }
 
 class Talk {
